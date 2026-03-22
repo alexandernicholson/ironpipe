@@ -16,13 +16,13 @@ pub struct TaskDefaults {
 }
 
 /// A hierarchical grouping of tasks within a DAG.
-/// Mirrors Airflow's TaskGroup concept.
+/// Mirrors Airflow's `TaskGroup` concept.
 #[derive(Debug, Clone)]
 pub struct TaskGroup {
     pub group_id: GroupId,
     pub prefix_group_id: bool,
     pub tasks: Vec<Task>,
-    pub children: Vec<TaskGroup>,
+    pub children: Vec<Self>,
     pub defaults: TaskDefaults,
 }
 
@@ -37,7 +37,7 @@ impl TaskGroup {
         }
     }
 
-    pub fn with_prefix(mut self, prefix: bool) -> Self {
+    pub const fn with_prefix(mut self, prefix: bool) -> Self {
         self.prefix_group_id = prefix;
         self
     }
@@ -52,7 +52,7 @@ impl TaskGroup {
         self
     }
 
-    pub fn add_child_group(mut self, group: TaskGroup) -> Self {
+    pub fn add_child_group(mut self, group: Self) -> Self {
         self.children.push(group);
         self
     }
@@ -140,8 +140,8 @@ impl TaskGroup {
                 .priority_weight(task.priority_weight)
                 .group_id(GroupId::new(my_prefix.clone()));
 
-            if let Some(ref pool) = self.defaults.pool.as_ref().or(task.pool.as_ref()) {
-                builder = builder.pool(pool.to_string());
+            if let Some(pool) = self.defaults.pool.as_ref().or(task.pool.as_ref()) {
+                builder = builder.pool(pool.clone());
             }
             if let Some(timeout) = task.execution_timeout {
                 builder = builder.execution_timeout(timeout);

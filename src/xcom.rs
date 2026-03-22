@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use crate::task_id::TaskId;
 
 /// Cross-communication store for passing data between tasks.
-/// Mirrors Apache Airflow's XCom mechanism.
-/// Nested map: task_id -> key -> value.
+/// Mirrors Apache Airflow's `XCom` mechanism.
+/// Nested map: `task_id` -> key -> value.
 #[derive(Debug, Clone, Default)]
 pub struct XComStore {
     store: HashMap<TaskId, HashMap<String, serde_json::Value>>,
@@ -33,7 +33,7 @@ impl XComStore {
         self.store.get(task_id)
     }
 
-    /// Clear all XCom data for a task.
+    /// Clear all `XCom` data for a task.
     pub fn clear_task(&mut self, task_id: &TaskId) {
         self.store.remove(task_id);
     }

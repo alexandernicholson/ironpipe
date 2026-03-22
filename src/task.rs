@@ -3,7 +3,7 @@ use std::time::Duration;
 use crate::task_id::{GroupId, TaskId};
 use crate::trigger_rule::TriggerRule;
 
-/// A task definition within a DAG. Mirrors Airflow's BaseOperator fields.
+/// A task definition within a DAG. Mirrors Airflow's `BaseOperator` fields.
 #[derive(Debug, Clone)]
 pub struct Task {
     pub task_id: TaskId,
@@ -42,27 +42,27 @@ impl TaskBuilder {
         }
     }
 
-    pub fn trigger_rule(mut self, rule: TriggerRule) -> Self {
+    pub const fn trigger_rule(mut self, rule: TriggerRule) -> Self {
         self.trigger_rule = rule;
         self
     }
 
-    pub fn retries(mut self, n: u32) -> Self {
+    pub const fn retries(mut self, n: u32) -> Self {
         self.retries = n;
         self
     }
 
-    pub fn retry_delay(mut self, d: Duration) -> Self {
+    pub const fn retry_delay(mut self, d: Duration) -> Self {
         self.retry_delay = d;
         self
     }
 
-    pub fn execution_timeout(mut self, d: Duration) -> Self {
+    pub const fn execution_timeout(mut self, d: Duration) -> Self {
         self.execution_timeout = Some(d);
         self
     }
 
-    pub fn priority_weight(mut self, w: i32) -> Self {
+    pub const fn priority_weight(mut self, w: i32) -> Self {
         self.priority_weight = w;
         self
     }

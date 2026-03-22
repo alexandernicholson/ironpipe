@@ -27,41 +27,41 @@ pub enum TaskState {
 
 impl TaskState {
     /// Returns true if the task is in a terminal state.
-    pub fn is_finished(&self) -> bool {
+    pub const fn is_finished(&self) -> bool {
         matches!(
             self,
-            TaskState::Success
-                | TaskState::Failed
-                | TaskState::Skipped
-                | TaskState::UpstreamFailed
-                | TaskState::Removed
+            Self::Success
+                | Self::Failed
+                | Self::Skipped
+                | Self::UpstreamFailed
+                | Self::Removed
         )
     }
 
     /// Returns true if the task completed successfully.
-    pub fn is_success(&self) -> bool {
-        matches!(self, TaskState::Success)
+    pub const fn is_success(&self) -> bool {
+        matches!(self, Self::Success)
     }
 
     /// Returns true if the task is in a failed state.
-    pub fn is_failure(&self) -> bool {
-        matches!(self, TaskState::Failed | TaskState::UpstreamFailed)
+    pub const fn is_failure(&self) -> bool {
+        matches!(self, Self::Failed | Self::UpstreamFailed)
     }
 }
 
 impl std::fmt::Display for TaskState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TaskState::None => write!(f, "none"),
-            TaskState::Scheduled => write!(f, "scheduled"),
-            TaskState::Queued => write!(f, "queued"),
-            TaskState::Running => write!(f, "running"),
-            TaskState::Success => write!(f, "success"),
-            TaskState::Failed => write!(f, "failed"),
-            TaskState::Skipped => write!(f, "skipped"),
-            TaskState::UpstreamFailed => write!(f, "upstream_failed"),
-            TaskState::UpForRetry => write!(f, "up_for_retry"),
-            TaskState::Removed => write!(f, "removed"),
+            Self::None => write!(f, "none"),
+            Self::Scheduled => write!(f, "scheduled"),
+            Self::Queued => write!(f, "queued"),
+            Self::Running => write!(f, "running"),
+            Self::Success => write!(f, "success"),
+            Self::Failed => write!(f, "failed"),
+            Self::Skipped => write!(f, "skipped"),
+            Self::UpstreamFailed => write!(f, "upstream_failed"),
+            Self::UpForRetry => write!(f, "up_for_retry"),
+            Self::Removed => write!(f, "removed"),
         }
     }
 }

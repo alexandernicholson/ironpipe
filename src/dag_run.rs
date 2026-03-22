@@ -33,7 +33,7 @@ pub struct DagRun {
 }
 
 impl DagRun {
-    /// Create a new DAG run. All tasks start in TaskState::None.
+    /// Create a new DAG run. All tasks start in `TaskState::None`.
     pub fn new(dag: Dag, run_id: impl Into<String>, logical_date: DateTime<Utc>) -> Self {
         let task_states: HashMap<TaskId, TaskState> = dag
             .task_ids()
@@ -65,12 +65,12 @@ impl DagRun {
     }
 
     /// Get the overall run state.
-    pub fn run_state(&self) -> DagRunState {
+    pub const fn run_state(&self) -> DagRunState {
         self.state
     }
 
     /// Get a reference to the underlying DAG.
-    pub fn dag(&self) -> &Dag {
+    pub const fn dag(&self) -> &Dag {
         &self.dag
     }
 
@@ -79,7 +79,7 @@ impl DagRun {
         self.attempt_counts.get(id).copied().unwrap_or(0)
     }
 
-    /// Mark a task as running. Valid from None, Scheduled, or UpForRetry.
+    /// Mark a task as running. Valid from `None`, `Scheduled`, or `UpForRetry`.
     pub fn mark_running(&mut self, id: &TaskId) -> Result<(), DagError> {
         let current = self.task_state(id);
         match current {
@@ -142,9 +142,8 @@ impl DagRun {
 
     /// Check if the task should be retried.
     fn should_retry(&self, id: &TaskId) -> bool {
-        let task = match self.dag.get_task(id) {
-            Some(t) => t,
-            None => return false,
+        let Some(task) = self.dag.get_task(id) else {
+            return false;
         };
         let attempts = self.attempt_counts.get(id).copied().unwrap_or(0);
         attempts <= task.retries
@@ -216,7 +215,7 @@ impl DagRun {
 
     /// Check if the DAG run is complete (all tasks in terminal states).
     pub fn is_complete(&self) -> bool {
-        self.task_states.values().all(|s| s.is_finished())
+        self.task_states.values().all(TaskState::is_finished)
     }
 
     /// Update the overall run state based on task states.
@@ -239,7 +238,7 @@ impl DagRun {
         }
 
         // All tasks are in terminal states
-        let any_failed = self.task_states.values().any(|s| s.is_failure());
+        let any_failed = self.task_states.values().any(TaskState::is_failure);
         if any_failed {
             self.state = DagRunState::Failed;
         } else {
@@ -247,12 +246,12 @@ impl DagRun {
         }
     }
 
-    /// Push an XCom value.
+    /// Push an `XCom` value.
     pub fn xcom_push(&mut self, task_id: &TaskId, key: &str, value: serde_json::Value) {
         self.xcom.push(task_id, key, value);
     }
 
-    /// Pull an XCom value.
+    /// Pull an `XCom` value.
     pub fn xcom_pull(&self, task_id: &TaskId, key: &str) -> Option<&serde_json::Value> {
         self.xcom.pull(task_id, key)
     }

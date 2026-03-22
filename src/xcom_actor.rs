@@ -6,13 +6,13 @@ use rebar::process::ProcessId;
 use crate::task_id::TaskId;
 use crate::xcom::XComStore;
 
-/// Call messages for the XCom actor.
+/// Call messages for the `XCom` actor.
 pub enum XComCall {
     Pull { task_id: TaskId, key: String },
     PullAll { task_id: TaskId },
 }
 
-/// Cast messages for the XCom actor.
+/// Cast messages for the `XCom` actor.
 pub enum XComCast {
     Push {
         task_id: TaskId,
@@ -24,14 +24,14 @@ pub enum XComCast {
     },
 }
 
-/// Reply messages from the XCom actor.
+/// Reply messages from the `XCom` actor.
 pub enum XComReply {
     Value(Option<serde_json::Value>),
     All(Option<HashMap<String, serde_json::Value>>),
 }
 
-/// GenServer actor for shared XCom state.
-/// Provides serialized access to XCom data via call/cast.
+/// `GenServer` actor for shared `XCom` state.
+/// Provides serialized access to `XCom` data via call/cast.
 pub struct XComActor;
 
 #[async_trait::async_trait]

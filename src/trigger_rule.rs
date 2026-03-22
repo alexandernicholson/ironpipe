@@ -1,7 +1,7 @@
 use crate::task_state::TaskState;
 
 /// Trigger rule determining when a task should execute based on upstream states.
-/// Mirrors Apache Airflow's TriggerRule enum.
+/// Mirrors Apache Airflow's `TriggerRule` enum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum TriggerRule {
     /// All upstream tasks succeeded (default).
@@ -97,22 +97,23 @@ pub enum TriggerEvaluation {
     Waiting,
     /// Task should be skipped.
     Skip,
-    /// Task should be marked as upstream_failed.
+    /// Task should be marked as `upstream_failed`.
     UpstreamFailed,
 }
 
 impl TriggerRule {
     /// Evaluate this trigger rule against the given upstream summary.
-    pub fn evaluate(&self, summary: &UpstreamSummary) -> TriggerEvaluation {
+    #[allow(clippy::too_many_lines)]
+    pub const fn evaluate(&self, summary: &UpstreamSummary) -> TriggerEvaluation {
         // No upstreams — vacuously satisfied for all rules.
         if summary.total == 0 {
             return TriggerEvaluation::Ready;
         }
 
         match self {
-            TriggerRule::Always => TriggerEvaluation::Ready,
+            Self::Always => TriggerEvaluation::Ready,
 
-            TriggerRule::AllSuccess => {
+            Self::AllSuccess => {
                 if summary.success == summary.total {
                     TriggerEvaluation::Ready
                 } else if summary.failed > 0 || summary.upstream_failed > 0 {
@@ -125,7 +126,7 @@ impl TriggerRule {
                 }
             }
 
-            TriggerRule::AllFailed => {
+            Self::AllFailed => {
                 let all_failed = summary.failed + summary.upstream_failed;
                 if all_failed == summary.total {
                     TriggerEvaluation::Ready
@@ -140,7 +141,7 @@ impl TriggerRule {
                 }
             }
 
-            TriggerRule::AllDone => {
+            Self::AllDone => {
                 if summary.done == summary.total {
                     TriggerEvaluation::Ready
                 } else {
@@ -148,7 +149,7 @@ impl TriggerRule {
                 }
             }
 
-            TriggerRule::AllDoneMinOneSuccess => {
+            Self::AllDoneMinOneSuccess => {
                 if summary.done == summary.total {
                     if summary.success >= 1 {
                         TriggerEvaluation::Ready
@@ -160,7 +161,7 @@ impl TriggerRule {
                 }
             }
 
-            TriggerRule::AllSkipped => {
+            Self::AllSkipped => {
                 if summary.skipped == summary.total {
                     TriggerEvaluation::Ready
                 } else if summary.done == summary.total
@@ -174,7 +175,7 @@ impl TriggerRule {
                 }
             }
 
-            TriggerRule::OneSuccess => {
+            Self::OneSuccess => {
                 if summary.success >= 1 {
                     TriggerEvaluation::Ready
                 } else if summary.done == summary.total {
@@ -185,7 +186,7 @@ impl TriggerRule {
                 }
             }
 
-            TriggerRule::OneFailed => {
+            Self::OneFailed => {
                 if summary.failed >= 1 || summary.upstream_failed >= 1 {
                     TriggerEvaluation::Ready
                 } else if summary.done == summary.total {
@@ -195,7 +196,7 @@ impl TriggerRule {
                 }
             }
 
-            TriggerRule::OneDone => {
+            Self::OneDone => {
                 if summary.done >= 1 {
                     TriggerEvaluation::Ready
                 } else {
@@ -203,7 +204,7 @@ impl TriggerRule {
                 }
             }
 
-            TriggerRule::NoneFailed => {
+            Self::NoneFailed => {
                 if summary.failed > 0 || summary.upstream_failed > 0 {
                     TriggerEvaluation::UpstreamFailed
                 } else if summary.done == summary.total {
@@ -214,7 +215,7 @@ impl TriggerRule {
                 }
             }
 
-            TriggerRule::NoneFailedMinOneSuccess => {
+            Self::NoneFailedMinOneSuccess => {
                 if summary.failed > 0 || summary.upstream_failed > 0 {
                     TriggerEvaluation::UpstreamFailed
                 } else if summary.done == summary.total {
@@ -228,7 +229,7 @@ impl TriggerRule {
                 }
             }
 
-            TriggerRule::NoneSkipped => {
+            Self::NoneSkipped => {
                 if summary.skipped > 0 {
                     TriggerEvaluation::Skip
                 } else if summary.done == summary.total {

@@ -6,7 +6,7 @@ use crate::task_id::TaskId;
 use crate::xcom::XComStore;
 
 /// Context passed to a task during execution.
-/// Provides access to XCom push/pull and task metadata.
+/// Provides access to `XCom` push/pull and task metadata.
 pub struct TaskContext {
     pub task_id: TaskId,
     pub run_id: String,
@@ -31,12 +31,12 @@ impl TaskContext {
         }
     }
 
-    /// Push an XCom value for this task.
+    /// Push an `XCom` value for this task.
     pub fn xcom_push(&mut self, key: &str, value: serde_json::Value) {
         self.xcom.push(&self.task_id, key, value);
     }
 
-    /// Get all XCom values produced by this task.
+    /// Get all `XCom` values produced by this task.
     pub fn xcom_values(&self) -> Option<&HashMap<String, serde_json::Value>> {
         self.xcom.pull_all(&self.task_id)
     }

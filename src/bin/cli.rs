@@ -15,7 +15,10 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Cell, Padding, Paragraph, Row, Table, Tabs};
 use ratatui::Terminal;
 
-use airflow_dag::*;
+use airflow_dag::{
+    Dag, DagRun, DagRunState, Task, TaskContext, TaskExecutor, TaskId, TaskState, TriggerRule,
+    spawn_scheduler,
+};
 
 #[derive(Parser)]
 #[command(name = "dag-cli", about = "Airflow-compatible DAG design and execution tool")]
@@ -30,6 +33,12 @@ enum Commands {
     Tui,
     /// Run a demo DAG and show execution
     Demo,
+    /// Print a DAG diagram to stdout
+    Diagram {
+        /// Which demo DAG to render: etl, diamond, ml
+        #[arg(default_value = "diamond")]
+        dag: String,
+    },
 }
 
 #[tokio::main]
@@ -38,7 +47,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match cli.command {
         Some(Commands::Demo) => run_demo().await?,
-        Some(Commands::Tui) | None => run_tui().await?,
+        Some(Commands::Diagram { dag }) => print_diagram(&dag),
+        Some(Commands::Tui) | None => run_tui()?,
     }
 
     Ok(())
@@ -209,10 +219,10 @@ async fn run_demo() -> Result<(), Box<dyn std::error::Error>> {
         .wait_for_completion(Duration::from_millis(50), Duration::from_secs(30))
         .await?;
 
-    println!("\nRun complete: {:?}", state);
+    println!("\nRun complete: {state:?}");
     let all = handle.all_task_states().await?;
     for (id, s) in &all {
-        println!("  {} -> {}", id, s);
+        println!("  {id} -> {s}");
     }
 
     Ok(())
@@ -304,7 +314,7 @@ impl App {
 // TUI main loop
 // =============================================================================
 
-async fn run_tui() -> Result<(), Box<dyn std::error::Error>> {
+fn run_tui() -> Result<(), Box<dyn std::error::Error>> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     crossterm::execute!(stdout, EnterAlternateScreen)?;
@@ -516,7 +526,7 @@ fn render_dag_structure(f: &mut ratatui::Frame, app: &App, area: Rect) {
         // Task line
         let mut spans = vec![
             Span::styled(
-                format!("  {} ", state_icon),
+                format!("  {state_icon} "),
                 Style::default().fg(state_color),
             ),
             Span::styled(
@@ -597,9 +607,9 @@ fn render_task_table(f: &mut ratatui::Frame, app: &App, area: Rect) {
             let downstream = dag.downstream_of(task_id);
 
             let mut up_ids: Vec<&str> = upstream.iter().map(|id| id.0.as_str()).collect();
-            up_ids.sort();
+            up_ids.sort_unstable();
             let mut down_ids: Vec<&str> = downstream.iter().map(|id| id.0.as_str()).collect();
-            down_ids.sort();
+            down_ids.sort_unstable();
 
             Row::new(vec![
                 Cell::from(task_id.0.clone())
@@ -807,7 +817,7 @@ fn render_run_info(f: &mut ratatui::Frame, app: &App, area: Rect) {
                 ),
                 if attempt > 0 {
                     Span::styled(
-                        format!("(attempt {})", attempt),
+                        format!("(attempt {attempt})"),
                         Style::default().fg(Color::DarkGray),
                     )
                 } else {
@@ -864,25 +874,268 @@ fn render_status_bar(f: &mut ratatui::Frame, _app: &App, area: Rect) {
 }
 
 // =============================================================================
+// Diagram renderer (stdout)
+// =============================================================================
+
+#[allow(clippy::too_many_lines)]
+fn print_diagram(dag_name: &str) {
+    let dag = match dag_name {
+        "etl" => build_etl_dag(),
+        "diamond" => build_diamond_dag(),
+        "ml" => build_complex_dag(),
+        _ => {
+            eprintln!("Unknown DAG: {dag_name}. Choose: etl, diamond, ml");
+            std::process::exit(1);
+        }
+    };
+
+    let sorted = dag.topological_sort().unwrap();
+
+    // Assign layers (depth from root)
+    let mut depth: std::collections::HashMap<&TaskId, usize> = std::collections::HashMap::new();
+    let mut layers: Vec<Vec<&TaskId>> = Vec::new();
+
+    for task_id in &sorted {
+        let upstream = dag.upstream_of(task_id);
+        let d = if upstream.is_empty() {
+            0
+        } else {
+            upstream
+                .iter()
+                .map(|u| depth.get(u).copied().unwrap_or(0) + 1)
+                .max()
+                .unwrap_or(0)
+        };
+        depth.insert(task_id, d);
+        while layers.len() <= d {
+            layers.push(Vec::new());
+        }
+        layers[d].push(task_id);
+    }
+
+    // Compute column width
+    let col_width = 22;
+    let max_cols = layers.iter().map(Vec::len).max().unwrap_or(1);
+    let total_width = max_cols * col_width;
+
+    // Title
+    println!();
+    let title = format!("DAG: {}", dag.dag_id);
+    let pad = (total_width.saturating_sub(title.len())) / 2;
+    println!("{}╔{}╗", " ".repeat(pad), "═".repeat(title.len() + 2));
+    println!("{}║ {} ║", " ".repeat(pad), title);
+    println!("{}╚{}╝", " ".repeat(pad), "═".repeat(title.len() + 2));
+    println!();
+
+    for (layer_idx, layer) in layers.iter().enumerate() {
+        // Draw connectors from previous layer
+        if layer_idx > 0 {
+            // Find which tasks in this layer connect to which in the previous
+            let prev = &layers[layer_idx - 1];
+
+            // Draw vertical lines
+            let mut connector_line = vec![' '; total_width];
+            let mut arrow_line = vec![' '; total_width];
+
+            for task_id in layer {
+                let upstream = dag.upstream_of(task_id);
+                let task_col_idx = layer.iter().position(|t| t == task_id).unwrap();
+                let task_center = center_pos(task_col_idx, layer.len(), col_width, total_width);
+
+                for up_id in &upstream {
+                    // Find which layer and position the upstream is in
+                    if let Some(up_col_idx) = prev.iter().position(|t| *t == up_id) {
+                        let up_center =
+                            center_pos(up_col_idx, prev.len(), col_width, total_width);
+
+                        // Draw horizontal connector
+                        let (left, right) = if up_center <= task_center {
+                            (up_center, task_center)
+                        } else {
+                            (task_center, up_center)
+                        };
+
+                        if up_center == task_center {
+                            // Straight vertical
+                            if connector_line[task_center] == ' ' {
+                                connector_line[task_center] = '│';
+                            }
+                        } else {
+                            // Angled connector
+                            for ch in &mut connector_line[left..=right] {
+                                if *ch == ' ' {
+                                    *ch = '─';
+                                } else if *ch == '│' {
+                                    *ch = '┼';
+                                }
+                            }
+                            connector_line[up_center] = if connector_line[up_center] == '─' {
+                                '┴'
+                            } else {
+                                '│'
+                            };
+                            connector_line[task_center] = if connector_line[task_center] == '─' {
+                                '┬'
+                            } else {
+                                '│'
+                            };
+                        }
+                    }
+                }
+
+                if arrow_line[task_center] == ' ' {
+                    arrow_line[task_center] = '▼';
+                }
+            }
+
+            let conn_str: String = connector_line.iter().collect();
+            let arrow_str: String = arrow_line.iter().collect();
+            println!("{}", conn_str.trim_end());
+            println!("{}", arrow_str.trim_end());
+        }
+
+        // Draw task boxes
+        let mut line1 = vec![' '; total_width]; // top border
+        let mut line2 = vec![' '; total_width]; // task name
+        let mut line3 = vec![' '; total_width]; // attributes
+        let mut line4 = vec![' '; total_width]; // bottom border
+
+        for (col_idx, task_id) in layer.iter().enumerate() {
+            let task = dag.get_task(task_id).unwrap();
+            let center = center_pos(col_idx, layer.len(), col_width, total_width);
+            let box_width = 18;
+            let left = center.saturating_sub(box_width / 2);
+
+            // Top border: ┌──────────────────┐
+            let top = format!("┌{}┐", "─".repeat(box_width));
+            for (i, ch) in top.chars().enumerate() {
+                if left + i < total_width {
+                    line1[left + i] = ch;
+                }
+            }
+
+            // Task name: │   task_name      │
+            let name = task_id.0.clone();
+            let name_pad = box_width.saturating_sub(name.len());
+            let name_left = name_pad / 2;
+            let name_right = name_pad - name_left;
+            let mid = format!(
+                "│{}{}{}│",
+                " ".repeat(name_left),
+                name,
+                " ".repeat(name_right)
+            );
+            for (i, ch) in mid.chars().enumerate() {
+                if left + i < total_width {
+                    line2[left + i] = ch;
+                }
+            }
+
+            // Attributes
+            let mut attrs = Vec::new();
+            if task.trigger_rule != TriggerRule::AllSuccess {
+                attrs.push(format!("{:?}", task.trigger_rule));
+            }
+            if task.retries > 0 {
+                attrs.push(format!("retries={}", task.retries));
+            }
+            let attr_str = if attrs.is_empty() {
+                String::new()
+            } else {
+                attrs.join(" ")
+            };
+            let attr_pad = box_width.saturating_sub(attr_str.len());
+            let attr_left = attr_pad / 2;
+            let attr_right = attr_pad - attr_left;
+            let attr_line = format!(
+                "│{}{}{}│",
+                " ".repeat(attr_left),
+                attr_str,
+                " ".repeat(attr_right)
+            );
+            for (i, ch) in attr_line.chars().enumerate() {
+                if left + i < total_width {
+                    line3[left + i] = ch;
+                }
+            }
+
+            // Bottom border: └──────────────────┘
+            let bot = format!("└{}┘", "─".repeat(box_width));
+            for (i, ch) in bot.chars().enumerate() {
+                if left + i < total_width {
+                    line4[left + i] = ch;
+                }
+            }
+        }
+
+        let s1: String = line1.iter().collect();
+        let s2: String = line2.iter().collect();
+        let s3: String = line3.iter().collect();
+        let s4: String = line4.iter().collect();
+        println!("{}", s1.trim_end());
+        println!("{}", s2.trim_end());
+        println!("{}", s3.trim_end());
+        println!("{}", s4.trim_end());
+    }
+
+    // Summary
+    println!();
+    println!("  Tasks: {}", dag.task_count());
+    println!(
+        "  Roots: {}",
+        dag.roots()
+            .iter()
+            .map(|id| id.0.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    println!(
+        "  Leaves: {}",
+        dag.leaves()
+            .iter()
+            .map(|id| id.0.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    println!(
+        "  Topo order: {}",
+        sorted
+            .iter()
+            .map(|id| id.0.as_str())
+            .collect::<Vec<_>>()
+            .join(" → ")
+    );
+    println!();
+}
+
+const fn center_pos(col_idx: usize, num_cols: usize, _col_width: usize, total_width: usize) -> usize {
+    if num_cols == 1 {
+        total_width / 2
+    } else {
+        let usable = total_width;
+        let spacing = usable / num_cols;
+        spacing / 2 + col_idx * spacing
+    }
+}
+
+// =============================================================================
 // Helpers
 // =============================================================================
 
-fn state_color(state: TaskState) -> Color {
+const fn state_color(state: TaskState) -> Color {
     match state {
-        TaskState::None => Color::DarkGray,
-        TaskState::Scheduled => Color::Gray,
-        TaskState::Queued => Color::Gray,
+        TaskState::Scheduled | TaskState::Queued => Color::Gray,
         TaskState::Running => Color::Blue,
         TaskState::Success => Color::Green,
         TaskState::Failed => Color::Red,
         TaskState::Skipped => Color::Magenta,
         TaskState::UpstreamFailed => Color::LightRed,
         TaskState::UpForRetry => Color::Yellow,
-        TaskState::Removed => Color::DarkGray,
+        TaskState::None | TaskState::Removed => Color::DarkGray,
     }
 }
 
-fn state_icon(state: TaskState) -> &'static str {
+const fn state_icon(state: TaskState) -> &'static str {
     match state {
         TaskState::None => "○",
         TaskState::Scheduled => "◔",

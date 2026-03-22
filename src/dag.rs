@@ -26,10 +26,10 @@ impl Dag {
         }
     }
 
-    /// Add a task to the DAG. Returns error if task_id already exists.
+    /// Add a task to the DAG. Returns error if `task_id` already exists.
     pub fn add_task(&mut self, task: Task) -> Result<(), DagError> {
         if self.tasks.contains_key(&task.task_id) {
-            return Err(DagError::DuplicateTaskId(task.task_id.clone()));
+            return Err(DagError::DuplicateTaskId(task.task_id));
         }
         let id = task.task_id.clone();
         self.tasks.insert(id.clone(), task);
@@ -75,7 +75,7 @@ impl Dag {
         Ok(())
     }
 
-    /// Set `upstream_task` as upstream of `task` (upstream_task >> task).
+    /// Set `upstream_task` as upstream of `task` (`upstream_task` >> task).
     pub fn set_upstream(&mut self, task: &TaskId, upstream_task: &TaskId) -> Result<(), DagError> {
         self.set_downstream(upstream_task, task)
     }
@@ -108,7 +108,7 @@ impl Dag {
     pub fn roots(&self) -> Vec<TaskId> {
         self.tasks
             .keys()
-            .filter(|id| self.upstream.get(*id).is_none_or(|s| s.is_empty()))
+            .filter(|id| self.upstream.get(*id).is_none_or(HashSet::is_empty))
             .cloned()
             .collect()
     }
@@ -117,7 +117,7 @@ impl Dag {
     pub fn leaves(&self) -> Vec<TaskId> {
         self.tasks
             .keys()
-            .filter(|id| self.downstream.get(*id).is_none_or(|s| s.is_empty()))
+            .filter(|id| self.downstream.get(*id).is_none_or(HashSet::is_empty))
             .cloned()
             .collect()
     }
@@ -129,7 +129,7 @@ impl Dag {
         for id in self.tasks.keys() {
             in_degree.insert(
                 id.clone(),
-                self.upstream.get(id).map_or(0, |s| s.len()),
+                self.upstream.get(id).map_or(0, HashSet::len),
             );
         }
 
@@ -140,7 +140,7 @@ impl Dag {
             .collect();
 
         // Sort for deterministic output when multiple roots
-        let mut queue_vec: Vec<TaskId> = queue.drain(..).collect();
+        let mut queue_vec: Vec<TaskId> = queue.into_iter().collect();
         queue_vec.sort();
         queue = queue_vec.into();
 
@@ -162,10 +162,10 @@ impl Dag {
             }
         }
 
-        if result.len() != self.tasks.len() {
-            Err(DagError::CycleDetected)
-        } else {
+        if result.len() == self.tasks.len() {
             Ok(result)
+        } else {
+            Err(DagError::CycleDetected)
         }
     }
 
@@ -465,9 +465,7 @@ mod tests {
             for up in upstreams {
                 assert!(
                     pos[up] < pos[id],
-                    "{} should appear before {}",
-                    up,
-                    id
+                    "{up} should appear before {id}"
                 );
             }
         }

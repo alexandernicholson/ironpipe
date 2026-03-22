@@ -41,14 +41,14 @@ pub struct SchedulerState {
     xcom_ref: GenServerRef<XComActor>,
 }
 
-/// GenServer actor that orchestrates DAG execution.
-/// Initial state is passed via a Mutex<Option> and taken during init.
+/// `GenServer` actor that orchestrates DAG execution.
+/// Initial state is passed via a `Mutex<Option>` and taken during init.
 pub struct SchedulerServer {
     initial_state: Mutex<Option<SchedulerState>>,
 }
 
 impl SchedulerServer {
-    fn new(state: SchedulerState) -> Self {
+    const fn new(state: SchedulerState) -> Self {
         Self {
             initial_state: Mutex::new(Some(state)),
         }
@@ -125,7 +125,7 @@ impl GenServer for SchedulerServer {
             let task_id = TaskId::new(task_id_str);
             let success = json
                 .get("success")
-                .and_then(|s| s.as_bool())
+                .and_then(serde_json::Value::as_bool)
                 .unwrap_or(false);
 
             if success {
@@ -281,12 +281,12 @@ impl DagHandle {
     }
 }
 
-/// Spawn a DAG scheduler as a GenServer.
+/// Spawn a DAG scheduler as a `GenServer`.
 /// This is the main entry point for running a DAG on Rebar.
-pub async fn spawn_scheduler(
+pub async fn spawn_scheduler<S: ::std::hash::BuildHasher>(
     runtime: Arc<Runtime>,
     dag: Dag,
-    executors: HashMap<TaskId, Arc<dyn TaskExecutor>>,
+    executors: HashMap<TaskId, Arc<dyn TaskExecutor>, S>,
     run_id: impl Into<String>,
     logical_date: chrono::DateTime<chrono::Utc>,
 ) -> DagHandle {
@@ -296,7 +296,7 @@ pub async fn spawn_scheduler(
     let state = SchedulerState {
         dag_run,
         runtime: Arc::clone(&runtime),
-        executors,
+        executors: executors.into_iter().collect(),
         xcom_ref,
     };
 
