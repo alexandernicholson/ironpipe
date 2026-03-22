@@ -117,7 +117,8 @@ impl TriggerRule {
                     TriggerEvaluation::Ready
                 } else if summary.failed > 0 || summary.upstream_failed > 0 {
                     TriggerEvaluation::UpstreamFailed
-                } else if summary.skipped > 0 && summary.done == summary.total {
+                } else if summary.done == summary.total {
+                    // All done but not all success — must be skipped/removed
                     TriggerEvaluation::Skip
                 } else {
                     TriggerEvaluation::Waiting
