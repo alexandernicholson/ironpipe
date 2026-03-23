@@ -54,8 +54,7 @@ async fn run_benchmark(distributed: bool) -> Result<(), Box<dyn std::error::Erro
     let dag = benchmark::build_benchmark_dag();
     let executors = benchmark::build_benchmark_executors();
 
-    println!("Pipeline: {} ({} tasks)", dag.dag_id, dag.task_count());
-    println!("  50 images → download → resize (Lanczos3 ×3) → hash → dedup → contact sheet");
+    print!("{}", dag.diagram());
     println!();
 
     let sorted = dag.topological_sort().unwrap();
