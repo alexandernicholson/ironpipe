@@ -1,5 +1,6 @@
 pub mod dag;
 pub mod dag_run;
+pub mod diagram;
 pub mod distributed;
 pub mod error;
 pub mod executor;

@@ -174,6 +174,18 @@ impl Dag {
         self.topological_sort()?;
         Ok(())
     }
+
+    /// Render the DAG as a horizontal (left-to-right) ASCII diagram.
+    #[must_use]
+    pub fn diagram(&self) -> String {
+        crate::diagram::horizontal(self)
+    }
+
+    /// Render the DAG as a vertical (top-to-bottom) ASCII diagram.
+    #[must_use]
+    pub fn diagram_vertical(&self) -> String {
+        crate::diagram::vertical(self)
+    }
 }
 
 #[cfg(test)]

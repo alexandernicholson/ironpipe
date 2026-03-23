@@ -1,5 +1,5 @@
 /// Unique identifier for a task within a DAG.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 pub struct TaskId(pub String);
 
 impl TaskId {
