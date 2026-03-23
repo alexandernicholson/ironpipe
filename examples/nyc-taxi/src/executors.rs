@@ -23,7 +23,7 @@ impl TaskExecutor for DownloadExecutor {
 
         println!(
             "[node {}] Downloading {} data: {}",
-            std::env::var("NODE_ID").unwrap_or_else(|_| "?".into()),
+            ctx.task_id,
             self.month,
             url
         );
@@ -56,7 +56,7 @@ impl TaskExecutor for DownloadExecutor {
 
         println!(
             "[node {}] Downloaded {}: {:.1} MB, ~{} rows",
-            std::env::var("NODE_ID").unwrap_or_else(|_| "?".into()),
+            ctx.task_id,
             self.month,
             file_size as f64 / 1_048_576.0,
             simulated_rows
@@ -80,7 +80,7 @@ impl TaskExecutor for CleanExecutor {
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         println!(
             "[node {}] Cleaning {} data...",
-            std::env::var("NODE_ID").unwrap_or_else(|_| "?".into()),
+            ctx.task_id,
             self.month
         );
 
@@ -105,7 +105,7 @@ impl TaskExecutor for CleanExecutor {
 
         println!(
             "[node {}] Cleaned {}: {:.0}% rows passed validation",
-            std::env::var("NODE_ID").unwrap_or_else(|_| "?".into()),
+            ctx.task_id,
             self.month,
             clean_ratio * 100.0
         );
@@ -127,7 +127,7 @@ impl TaskExecutor for AggregateExecutor {
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         println!(
             "[node {}] Aggregating all months...",
-            std::env::var("NODE_ID").unwrap_or_else(|_| "?".into()),
+            ctx.task_id,
         );
 
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
@@ -163,7 +163,7 @@ impl TaskExecutor for AggregateExecutor {
 
         println!(
             "[node {}] Aggregation complete: {} months, {} tasks",
-            std::env::var("NODE_ID").unwrap_or_else(|_| "?".into()),
+            ctx.task_id,
             4,
             tasks_completed
         );
@@ -183,7 +183,7 @@ impl TaskExecutor for ReportExecutor {
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         println!(
             "[node {}] Generating report...",
-            std::env::var("NODE_ID").unwrap_or_else(|_| "?".into()),
+            ctx.task_id,
         );
 
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -199,7 +199,7 @@ impl TaskExecutor for ReportExecutor {
 
         println!(
             "[node {}] Report generated successfully",
-            std::env::var("NODE_ID").unwrap_or_else(|_| "?".into()),
+            ctx.task_id,
         );
 
         Ok(())

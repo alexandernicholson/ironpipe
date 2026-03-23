@@ -1,8 +1,0 @@
-/Users/alexandernicholson/Documents/Experiments/state/examples/nyc-taxi/target/debug/deps/instability-49edebe9d6d11191.d: /Users/alexandernicholson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/instability-0.3.12/src/lib.rs /Users/alexandernicholson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/instability-0.3.12/src/item_like.rs /Users/alexandernicholson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/instability-0.3.12/src/stable.rs /Users/alexandernicholson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/instability-0.3.12/src/unstable.rs
-
-/Users/alexandernicholson/Documents/Experiments/state/examples/nyc-taxi/target/debug/deps/libinstability-49edebe9d6d11191.dylib: /Users/alexandernicholson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/instability-0.3.12/src/lib.rs /Users/alexandernicholson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/instability-0.3.12/src/item_like.rs /Users/alexandernicholson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/instability-0.3.12/src/stable.rs /Users/alexandernicholson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/instability-0.3.12/src/unstable.rs
-
-/Users/alexandernicholson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/instability-0.3.12/src/lib.rs:
-/Users/alexandernicholson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/instability-0.3.12/src/item_like.rs:
-/Users/alexandernicholson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/instability-0.3.12/src/stable.rs:
-/Users/alexandernicholson/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/instability-0.3.12/src/unstable.rs:
