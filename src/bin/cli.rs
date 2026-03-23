@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::io;
 use std::time::Duration;
 
-use clap::{Parser, Subcommand};
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
@@ -16,135 +15,17 @@ use ratatui::Terminal;
 
 use ironpipe::{Dag, DagRun, DagRunState, Task, TaskId, TaskState, TriggerRule};
 
-#[derive(Parser)]
-#[command(name = "dag-cli", about = "DAG task orchestration and visualization tool")]
-struct Cli {
-    #[command(subcommand)]
-    command: Commands,
-}
-
-#[derive(Subcommand)]
-enum Commands {
-    /// Print a DAG diagram from a JSON definition file
-    Diagram {
-        /// Path to a JSON DAG definition file
-        file: String,
-        /// Render vertically (top-to-bottom) instead of horizontally
-        #[arg(short, long)]
-        vertical: bool,
-    },
-    /// Launch interactive TUI (demo DAGs)
-    Tui,
-}
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let cli = Cli::parse();
-
-    match cli.command {
-        Commands::Diagram { file, vertical } => {
-            let dag = load_dag_from_json(&file)?;
-            if vertical {
-                print!("{}", dag.diagram_vertical());
-            } else {
-                print!("{}", dag.diagram());
-            }
-        }
-        Commands::Tui => run_tui()?,
-    }
-
-    Ok(())
-}
-
-// =============================================================================
-// JSON DAG loading
-// =============================================================================
-
-fn load_dag_from_json(path: &str) -> Result<Dag, Box<dyn std::error::Error>> {
-    let contents = std::fs::read_to_string(path)?;
-    let json: serde_json::Value = serde_json::from_str(&contents)?;
-
-    let dag_id = json["dag_id"]
-        .as_str()
-        .unwrap_or("unnamed")
-        .to_string();
-
-    let mut dag = Dag::new(dag_id);
-
-    // Parse tasks
-    if let Some(tasks) = json["tasks"].as_array() {
-        for task_json in tasks {
-            let task_id = task_json["id"]
-                .as_str()
-                .ok_or("task missing 'id' field")?;
-
-            let mut builder = Task::builder(task_id);
-
-            if let Some(retries) = task_json["retries"].as_u64() {
-                builder = builder.retries(retries as u32);
-            }
-
-            if let Some(rule_str) = task_json["trigger_rule"].as_str() {
-                let rule = match rule_str {
-                    "all_success" | "AllSuccess" => TriggerRule::AllSuccess,
-                    "all_failed" | "AllFailed" => TriggerRule::AllFailed,
-                    "all_done" | "AllDone" => TriggerRule::AllDone,
-                    "all_done_min_one_success" | "AllDoneMinOneSuccess" => TriggerRule::AllDoneMinOneSuccess,
-                    "all_skipped" | "AllSkipped" => TriggerRule::AllSkipped,
-                    "one_success" | "OneSuccess" => TriggerRule::OneSuccess,
-                    "one_failed" | "OneFailed" => TriggerRule::OneFailed,
-                    "one_done" | "OneDone" => TriggerRule::OneDone,
-                    "none_failed" | "NoneFailed" => TriggerRule::NoneFailed,
-                    "none_failed_min_one_success" | "NoneFailedMinOneSuccess" => TriggerRule::NoneFailedMinOneSuccess,
-                    "none_skipped" | "NoneSkipped" => TriggerRule::NoneSkipped,
-                    "always" | "Always" => TriggerRule::Always,
-                    other => return Err(format!("unknown trigger rule: {other}").into()),
-                };
-                builder = builder.trigger_rule(rule);
-            }
-
-            dag.add_task(builder.build())?;
-        }
-    }
-
-    // Parse edges
-    if let Some(edges) = json["edges"].as_array() {
-        for edge in edges {
-            let from = edge["from"].as_str().ok_or("edge missing 'from'")?;
-            let to = edge["to"].as_str().ok_or("edge missing 'to'")?;
-            dag.set_downstream(&TaskId::new(from), &TaskId::new(to))?;
-        }
-    }
-
-    // Alternative: "dependencies" format (task_id -> [upstream_ids])
-    if let Some(deps) = json["dependencies"].as_object() {
-        for (task_id, upstreams) in deps {
-            if let Some(arr) = upstreams.as_array() {
-                for upstream in arr {
-                    if let Some(up_id) = upstream.as_str() {
-                        dag.set_upstream(&TaskId::new(task_id.as_str()), &TaskId::new(up_id))?;
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(dag)
-}
-
-// =============================================================================
-// TUI (uses demo DAGs for interactive exploration)
-// =============================================================================
-
-fn demo_dags() -> Vec<Dag> {
+    // Build DAGs — this is application code, not library presets
     let mut etl = Dag::new("etl_pipeline");
-    etl.add_task(Task::builder("extract").build()).unwrap();
-    etl.add_task(Task::builder("validate").build()).unwrap();
-    etl.add_task(Task::builder("transform").retries(2).build()).unwrap();
-    etl.add_task(Task::builder("load").build()).unwrap();
-    etl.add_task(Task::builder("notify").trigger_rule(TriggerRule::AllDone).build()).unwrap();
-    etl.chain(&["extract", "validate", "transform", "load", "notify"]
-        .map(TaskId::new)).unwrap();
+    for id in ["extract", "validate", "transform", "load", "notify"] {
+        let mut b = Task::builder(id);
+        if id == "transform" { b = b.retries(2); }
+        if id == "notify" { b = b.trigger_rule(TriggerRule::AllDone); }
+        etl.add_task(b.build()).unwrap();
+    }
+    etl.chain(&["extract", "validate", "transform", "load", "notify"].map(TaskId::new)).unwrap();
 
     let mut diamond = Dag::new("diamond_pipeline");
     diamond.add_task(Task::builder("start").build()).unwrap();
@@ -158,27 +39,16 @@ fn demo_dags() -> Vec<Dag> {
     diamond.set_downstream(&TaskId::new("branch_b"), &TaskId::new("join")).unwrap();
     diamond.set_downstream(&TaskId::new("join"), &TaskId::new("cleanup")).unwrap();
 
-    let mut images = Dag::new("image_processing");
-    for b in 1..=5 {
-        images.add_task(Task::builder(format!("download_{b}")).retries(1).build()).unwrap();
-        images.add_task(Task::builder(format!("resize_{b}")).build()).unwrap();
-        images.add_task(Task::builder(format!("hash_{b}")).build()).unwrap();
-        images.chain(&[
-            TaskId::new(format!("download_{b}")),
-            TaskId::new(format!("resize_{b}")),
-            TaskId::new(format!("hash_{b}")),
-        ]).unwrap();
-    }
-    images.add_task(Task::builder("dedup").trigger_rule(TriggerRule::AllSuccess).build()).unwrap();
-    images.add_task(Task::builder("contact_sheet").build()).unwrap();
-    images.add_task(Task::builder("report").build()).unwrap();
-    for b in 1..=5 {
-        images.set_downstream(&TaskId::new(format!("hash_{b}")), &TaskId::new("dedup")).unwrap();
-    }
-    images.chain(&[TaskId::new("dedup"), TaskId::new("contact_sheet"), TaskId::new("report")]).unwrap();
+    // Print diagram of the diamond DAG to show the library function
+    print!("{}", diamond.diagram());
 
-    vec![etl, diamond, images]
+    run_tui(vec![etl, diamond])?;
+    Ok(())
 }
+
+// =============================================================================
+// TUI
+// =============================================================================
 
 struct App {
     dags: Vec<Dag>,
@@ -192,8 +62,7 @@ struct App {
 }
 
 impl App {
-    fn new() -> Self {
-        let dags = demo_dags();
+    fn new(dags: Vec<Dag>) -> Self {
         let len = dags.len();
         Self {
             dags,
@@ -249,14 +118,14 @@ impl App {
     }
 }
 
-fn run_tui() -> Result<(), Box<dyn std::error::Error>> {
+fn run_tui(dags: Vec<Dag>) -> Result<(), Box<dyn std::error::Error>> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     crossterm::execute!(stdout, EnterAlternateScreen)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let mut app = App::new();
+    let mut app = App::new(dags);
 
     loop {
         terminal.draw(|f| ui(f, &app))?;

@@ -2,7 +2,7 @@ use crate::task_state::TaskState;
 
 /// Trigger rule determining when a task should execute based on upstream states.
 /// Trigger rule determining when a task should execute based on upstream states.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum TriggerRule {
     /// All upstream tasks succeeded (default).
     #[default]
