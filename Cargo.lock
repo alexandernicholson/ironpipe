@@ -1032,7 +1032,7 @@ dependencies = [
 [[package]]
 name = "rebar"
 version = "0.1.0"
-source = "git+https://github.com/alexandernicholson/rebar.git#65405aac71592e4eaae25ba2ace2ac4d419406de"
+source = "git+https://github.com/alexandernicholson/rebar.git#233c87337f200146a7cd6f91bc96e57fe877aa54"
 dependencies = [
  "async-trait",
  "rebar-cluster",
@@ -1044,7 +1044,7 @@ dependencies = [
 [[package]]
 name = "rebar-cluster"
 version = "0.1.0"
-source = "git+https://github.com/alexandernicholson/rebar.git#65405aac71592e4eaae25ba2ace2ac4d419406de"
+source = "git+https://github.com/alexandernicholson/rebar.git#233c87337f200146a7cd6f91bc96e57fe877aa54"
 dependencies = [
  "async-trait",
  "bytes",
@@ -1066,7 +1066,7 @@ dependencies = [
 [[package]]
 name = "rebar-core"
 version = "0.1.0"
-source = "git+https://github.com/alexandernicholson/rebar.git#65405aac71592e4eaae25ba2ace2ac4d419406de"
+source = "git+https://github.com/alexandernicholson/rebar.git#233c87337f200146a7cd6f91bc96e57fe877aa54"
 dependencies = [
  "async-trait",
  "dashmap",

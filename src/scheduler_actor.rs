@@ -5,13 +5,14 @@ use std::time::Duration;
 use rebar::gen_server::{CallError, GenServer, GenServerContext, GenServerRef, spawn_gen_server};
 use rebar::process::{Message, ProcessId};
 use rebar::runtime::Runtime;
+use rebar::task::async_task_ctx;
 
 use crate::dag::Dag;
 use crate::dag_run::{DagRun, DagRunState};
 use crate::executor::{TaskContext, TaskExecutor};
 use crate::task_id::TaskId;
 use crate::task_state::TaskState;
-use crate::xcom_actor::{XComActor, XComCast};
+use crate::xcom_actor::XComAgent;
 
 /// Call messages for the scheduler actor.
 pub enum SchedulerCall {
@@ -38,7 +39,7 @@ pub struct SchedulerState {
     dag_run: DagRun,
     runtime: Arc<Runtime>,
     executors: HashMap<TaskId, Arc<dyn TaskExecutor>>,
-    xcom_ref: GenServerRef<XComActor>,
+    xcom: XComAgent,
 }
 
 /// `GenServer` actor that orchestrates DAG execution.
@@ -134,16 +135,9 @@ impl GenServer for SchedulerServer {
                     .and_then(|x| serde_json::from_value(x.clone()).ok())
                     .unwrap_or_default();
 
-                // Push XCom values
+                // Push XCom values via the Agent
                 for (key, value) in xcom_map {
-                    state
-                        .xcom_ref
-                        .cast(XComCast::Push {
-                            task_id: task_id.clone(),
-                            key,
-                            value,
-                        })
-                        .ok();
+                    state.xcom.push(task_id.clone(), key, value);
                 }
                 let _ = state.dag_run.mark_success(&task_id);
             } else {
@@ -171,41 +165,39 @@ async fn dispatch_ready_tasks(state: &mut SchedulerState, ctx: &GenServerContext
             let logical_date = state.dag_run.logical_date;
             let attempt = state.dag_run.attempt_count(&tid);
 
-            // Spawn a Rebar process for each task execution
-            state
-                .runtime
-                .spawn(move |ctx| async move {
-                    let mut task_ctx =
-                        TaskContext::new(tid.clone(), run_id, logical_date, attempt);
+            // Use Rebar's Task API for proper result tracking
+            let _task = async_task_ctx(&state.runtime, move |ctx| async move {
+                let mut task_ctx =
+                    TaskContext::new(tid.clone(), run_id, logical_date, attempt);
 
-                    let result = executor.execute(&mut task_ctx).await;
+                let result = executor.execute(&mut task_ctx).await;
 
-                    let json = match result {
-                        Ok(()) => {
-                            let xcom_values = task_ctx.xcom_values().cloned().unwrap_or_default();
-                            serde_json::json!({
-                                "type": "task_completed",
-                                "task_id": tid.0,
-                                "success": true,
-                                "xcom": xcom_values,
-                            })
-                        }
-                        Err(e) => {
-                            serde_json::json!({
-                                "type": "task_completed",
-                                "task_id": tid.0,
-                                "success": false,
-                                "error": e.to_string(),
-                            })
-                        }
-                    };
+                let json = match result {
+                    Ok(()) => {
+                        let xcom_values = task_ctx.xcom_values().cloned().unwrap_or_default();
+                        serde_json::json!({
+                            "type": "task_completed",
+                            "task_id": tid.0,
+                            "success": true,
+                            "xcom": xcom_values,
+                        })
+                    }
+                    Err(e) => {
+                        serde_json::json!({
+                            "type": "task_completed",
+                            "task_id": tid.0,
+                            "success": false,
+                            "error": e.to_string(),
+                        })
+                    }
+                };
 
-                    let payload = rmpv::Value::String(
-                        serde_json::to_string(&json).unwrap().into(),
-                    );
-                    let _ = ctx.send(scheduler_pid, payload).await;
-                })
-                .await;
+                let payload = rmpv::Value::String(
+                    serde_json::to_string(&json).unwrap().into(),
+                );
+                let _ = ctx.send(scheduler_pid, payload).await;
+            })
+            .await;
         }
     }
 }
@@ -283,6 +275,8 @@ impl DagHandle {
 
 /// Spawn a DAG scheduler as a `GenServer`.
 /// This is the main entry point for running a DAG on Rebar.
+///
+/// Uses Rebar's `Agent` for `XCom` state and `async_task_ctx` for task execution.
 pub async fn spawn_scheduler<S: ::std::hash::BuildHasher>(
     runtime: Arc<Runtime>,
     dag: Dag,
@@ -290,14 +284,14 @@ pub async fn spawn_scheduler<S: ::std::hash::BuildHasher>(
     run_id: impl Into<String>,
     logical_date: chrono::DateTime<chrono::Utc>,
 ) -> DagHandle {
-    let xcom_ref = spawn_gen_server(Arc::clone(&runtime), XComActor).await;
+    let xcom = XComAgent::start(Arc::clone(&runtime)).await;
     let dag_run = DagRun::new(dag, run_id, logical_date);
 
     let state = SchedulerState {
         dag_run,
         runtime: Arc::clone(&runtime),
         executors: executors.into_iter().collect(),
-        xcom_ref,
+        xcom,
     };
 
     let server = SchedulerServer::new(state);
@@ -386,8 +380,6 @@ mod tests {
             .collect()
     }
 
-    // --- Single Task ---
-
     #[tokio::test]
     async fn single_task_completes() {
         let rt = Arc::new(Runtime::new(1));
@@ -404,8 +396,6 @@ mod tests {
 
         assert_eq!(state, DagRunState::Success);
     }
-
-    // --- Linear Chain ---
 
     #[tokio::test]
     async fn linear_chain_completes_in_order() {
@@ -426,21 +416,10 @@ mod tests {
             .unwrap();
 
         assert_eq!(state, DagRunState::Success);
-        assert_eq!(
-            handle.task_state(&TaskId::new("a")).await.unwrap(),
-            TaskState::Success
-        );
-        assert_eq!(
-            handle.task_state(&TaskId::new("b")).await.unwrap(),
-            TaskState::Success
-        );
-        assert_eq!(
-            handle.task_state(&TaskId::new("c")).await.unwrap(),
-            TaskState::Success
-        );
+        assert_eq!(handle.task_state(&TaskId::new("a")).await.unwrap(), TaskState::Success);
+        assert_eq!(handle.task_state(&TaskId::new("b")).await.unwrap(), TaskState::Success);
+        assert_eq!(handle.task_state(&TaskId::new("c")).await.unwrap(), TaskState::Success);
     }
-
-    // --- Diamond DAG ---
 
     #[tokio::test]
     async fn diamond_dag_completes() {
@@ -450,14 +429,10 @@ mod tests {
         dag.add_task(simple_task("b")).unwrap();
         dag.add_task(simple_task("c")).unwrap();
         dag.add_task(simple_task("d")).unwrap();
-        dag.set_downstream(&TaskId::new("a"), &TaskId::new("b"))
-            .unwrap();
-        dag.set_downstream(&TaskId::new("a"), &TaskId::new("c"))
-            .unwrap();
-        dag.set_downstream(&TaskId::new("b"), &TaskId::new("d"))
-            .unwrap();
-        dag.set_downstream(&TaskId::new("c"), &TaskId::new("d"))
-            .unwrap();
+        dag.set_downstream(&TaskId::new("a"), &TaskId::new("b")).unwrap();
+        dag.set_downstream(&TaskId::new("a"), &TaskId::new("c")).unwrap();
+        dag.set_downstream(&TaskId::new("b"), &TaskId::new("d")).unwrap();
+        dag.set_downstream(&TaskId::new("c"), &TaskId::new("d")).unwrap();
 
         let counter = Arc::new(AtomicU32::new(0));
         let executors: HashMap<TaskId, Arc<dyn TaskExecutor>> = ["a", "b", "c", "d"]
@@ -480,10 +455,8 @@ mod tests {
             .unwrap();
 
         assert_eq!(state, DagRunState::Success);
-        assert_eq!(counter.load(Ordering::SeqCst), 4); // all 4 tasks executed
+        assert_eq!(counter.load(Ordering::SeqCst), 4);
     }
-
-    // --- Failure Propagation ---
 
     #[tokio::test]
     async fn task_failure_propagates() {
@@ -491,8 +464,7 @@ mod tests {
         let mut dag = Dag::new("test");
         dag.add_task(simple_task("a")).unwrap();
         dag.add_task(simple_task("b")).unwrap();
-        dag.set_downstream(&TaskId::new("a"), &TaskId::new("b"))
-            .unwrap();
+        dag.set_downstream(&TaskId::new("a"), &TaskId::new("b")).unwrap();
 
         let mut executors: HashMap<TaskId, Arc<dyn TaskExecutor>> = HashMap::new();
         executors.insert(TaskId::new("a"), Arc::new(FailingExecutor));
@@ -506,17 +478,9 @@ mod tests {
             .unwrap();
 
         assert_eq!(state, DagRunState::Failed);
-        assert_eq!(
-            handle.task_state(&TaskId::new("a")).await.unwrap(),
-            TaskState::Failed
-        );
-        assert_eq!(
-            handle.task_state(&TaskId::new("b")).await.unwrap(),
-            TaskState::UpstreamFailed
-        );
+        assert_eq!(handle.task_state(&TaskId::new("a")).await.unwrap(), TaskState::Failed);
+        assert_eq!(handle.task_state(&TaskId::new("b")).await.unwrap(), TaskState::UpstreamFailed);
     }
-
-    // --- XCom Across Tasks ---
 
     #[tokio::test]
     async fn xcom_produced_by_task() {
@@ -527,9 +491,7 @@ mod tests {
         let mut executors: HashMap<TaskId, Arc<dyn TaskExecutor>> = HashMap::new();
         executors.insert(
             TaskId::new("producer"),
-            Arc::new(XComProducer {
-                value: json!("hello from producer"),
-            }),
+            Arc::new(XComProducer { value: json!("hello from producer") }),
         );
 
         let handle = spawn_scheduler(rt, dag, executors, "run_1", Utc::now()).await;
@@ -542,8 +504,6 @@ mod tests {
         assert_eq!(state, DagRunState::Success);
     }
 
-    // --- Retry Logic ---
-
     #[tokio::test]
     async fn task_with_retries_eventually_fails() {
         let rt = Arc::new(Runtime::new(1));
@@ -553,7 +513,6 @@ mod tests {
         let counter = Arc::new(AtomicU32::new(0));
         let mut executors: HashMap<TaskId, Arc<dyn TaskExecutor>> = HashMap::new();
 
-        // Executor that always fails but counts attempts
         struct CountingFailer(Arc<AtomicU32>);
         #[async_trait::async_trait]
         impl TaskExecutor for CountingFailer {
@@ -579,7 +538,6 @@ mod tests {
             .unwrap();
 
         assert_eq!(state, DagRunState::Failed);
-        // Should have been attempted twice (initial + 1 retry)
         assert_eq!(counter.load(Ordering::SeqCst), 2);
     }
 }

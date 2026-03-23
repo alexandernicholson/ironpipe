@@ -22,6 +22,7 @@ pub use task_id::{GroupId, TaskId};
 pub use task_state::TaskState;
 pub use trigger_rule::{TriggerEvaluation, TriggerRule, UpstreamSummary};
 pub use xcom::XComStore;
+pub use xcom_actor::XComAgent;
 
 #[cfg(test)]
 mod verification;
